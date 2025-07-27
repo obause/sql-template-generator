@@ -1,0 +1,291 @@
+{
+  "hub": {
+    "name": "Hub",
+    "description": "A Hub represents a unique business concept and contains the business keys and metadata.",
+    "fields": [
+      {
+        "name": "table_name",
+        "label": "Table Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "HUB_CUSTOMER",
+        "help": "Name of the Hub table (e.g., HUB_CUSTOMER)"
+      },
+      {
+        "name": "business_keys",
+        "label": "Business Keys",
+        "type": "multi-text",
+        "required": true,
+        "placeholder": "CUSTOMER_ID",
+        "help": "Business key columns that uniquely identify the entity"
+      },
+      {
+        "name": "hashkey_name",
+        "label": "Hash Key Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "HUB_CUSTOMER_HASHKEY",
+        "help": "Name of the hash key column"
+      },
+      {
+        "name": "source_table",
+        "label": "Source Table",
+        "type": "text",
+        "required": true,
+        "placeholder": "SRC_CUSTOMERS",
+        "help": "Source table or system name"
+      },
+      {
+        "name": "load_date_column",
+        "label": "Load Date Column",
+        "type": "text",
+        "required": false,
+        "placeholder": "LOAD_DATETIME",
+        "help": "Column name for load date tracking"
+      },
+      {
+        "name": "record_source",
+        "label": "Record Source",
+        "type": "text",
+        "required": false,
+        "placeholder": "CRM_SYSTEM",
+        "help": "Source system identifier"
+      }
+    ],
+    "template": "-- Data Vault 2.0 Hub: {{table_name}}\n-- Generated on {{current_date}}\n\nCREATE TABLE {{table_name}} (\n    {{hashkey_name}} BINARY(16) NOT NULL,\n{{#business_keys}}\n    {{.}} VARCHAR(255) NOT NULL,\n{{/business_keys}}\n    {{load_date_column}} DATETIME NOT NULL,\n    RECORD_SOURCE VARCHAR(255) NOT NULL,\n    \n    PRIMARY KEY ({{hashkey_name}})\n);\n\n-- Insert statement\nINSERT INTO {{table_name}} (\n    {{hashkey_name}},\n{{#business_keys}}\n    {{.}},\n{{/business_keys}}\n    {{load_date_column}},\n    RECORD_SOURCE\n)\nSELECT \n    MD5(CONCAT(\n{{#business_keys}}\n        COALESCE({{.}}, ''),\n{{/business_keys}}\n        ''\n    )) AS {{hashkey_name}},\n{{#business_keys}}\n    {{.}},\n{{/business_keys}}\n    CURRENT_TIMESTAMP AS {{load_date_column}},\n    '{{record_source}}' AS RECORD_SOURCE\nFROM {{source_table}}\nWHERE NOT EXISTS (\n    SELECT 1 FROM {{table_name}} h\n    WHERE h.{{hashkey_name}} = MD5(CONCAT(\n{{#business_keys}}\n        COALESCE({{source_table}}.{{.}}, ''),\n{{/business_keys}}\n        ''\n    ))\n);"
+  },
+  "satellite": {
+    "name": "Satellite",
+    "description": "A Satellite contains descriptive attributes and tracks changes over time for a Hub or Link.",
+    "fields": [
+      {
+        "name": "table_name",
+        "label": "Table Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "SAT_CUSTOMER_DETAILS",
+        "help": "Name of the Satellite table"
+      },
+      {
+        "name": "parent_hashkey",
+        "label": "Parent Hash Key",
+        "type": "text",
+        "required": true,
+        "placeholder": "HUB_CUSTOMER_HASHKEY",
+        "help": "Hash key from the parent Hub or Link"
+      },
+      {
+        "name": "descriptive_fields",
+        "label": "Descriptive Fields",
+        "type": "multi-text",
+        "required": true,
+        "placeholder": "CUSTOMER_NAME",
+        "help": "Descriptive attribute columns"
+      },
+      {
+        "name": "source_table",
+        "label": "Source Table",
+        "type": "text",
+        "required": true,
+        "placeholder": "SRC_CUSTOMERS",
+        "help": "Source table or system name"
+      },
+      {
+        "name": "load_date_column",
+        "label": "Load Date Column",
+        "type": "text",
+        "required": false,
+        "placeholder": "LOAD_DATETIME",
+        "help": "Column name for load date tracking"
+      },
+      {
+        "name": "record_source",
+        "label": "Record Source",
+        "type": "text",
+        "required": false,
+        "placeholder": "CRM_SYSTEM",
+        "help": "Source system identifier"
+      }
+    ],
+    "template": "-- Data Vault 2.0 Satellite: {{table_name}}\n-- Generated on {{current_date}}\n\nCREATE TABLE {{table_name}} (\n    {{parent_hashkey}} BINARY(16) NOT NULL,\n{{#descriptive_fields}}\n    {{.}} VARCHAR(255),\n{{/descriptive_fields}}\n    {{load_date_column}} DATETIME NOT NULL,\n    LOAD_END_DATETIME DATETIME,\n    RECORD_SOURCE VARCHAR(255) NOT NULL,\n    HASH_DIFF BINARY(16) NOT NULL,\n    \n    PRIMARY KEY ({{parent_hashkey}}, {{load_date_column}})\n);\n\n-- Insert statement with change detection\nINSERT INTO {{table_name}} (\n    {{parent_hashkey}},\n{{#descriptive_fields}}\n    {{.}},\n{{/descriptive_fields}}\n    {{load_date_column}},\n    RECORD_SOURCE,\n    HASH_DIFF\n)\nSELECT \n    src.{{parent_hashkey}},\n{{#descriptive_fields}}\n    src.{{.}},\n{{/descriptive_fields}}\n    CURRENT_TIMESTAMP AS {{load_date_column}},\n    '{{record_source}}' AS RECORD_SOURCE,\n    MD5(CONCAT(\n{{#descriptive_fields}}\n        COALESCE(src.{{.}}, ''),\n{{/descriptive_fields}}\n        ''\n    )) AS HASH_DIFF\nFROM {{source_table}} src\nINNER JOIN HUB_TABLE hub ON hub.business_key = src.business_key\nLEFT JOIN {{table_name}} sat ON sat.{{parent_hashkey}} = hub.{{parent_hashkey}} AND sat.LOAD_END_DATETIME IS NULL\nWHERE sat.{{parent_hashkey}} IS NULL \n   OR sat.HASH_DIFF != MD5(CONCAT(\n{{#descriptive_fields}}\n        COALESCE(src.{{.}}, ''),\n{{/descriptive_fields}}\n        ''\n    ));"
+  },
+  "link": {
+    "name": "Link",
+    "description": "A Link represents relationships between business entities (Hubs).",
+    "fields": [
+      {
+        "name": "table_name",
+        "label": "Table Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "LINK_CUSTOMER_ORDER",
+        "help": "Name of the Link table"
+      },
+      {
+        "name": "link_hashkey",
+        "label": "Link Hash Key",
+        "type": "text",
+        "required": true,
+        "placeholder": "LINK_CUSTOMER_ORDER_HASHKEY",
+        "help": "Name of the link hash key column"
+      },
+      {
+        "name": "hub_hashkeys",
+        "label": "Hub Hash Keys",
+        "type": "multi-text",
+        "required": true,
+        "placeholder": "HUB_CUSTOMER_HASHKEY",
+        "help": "Hash keys from the related Hub tables"
+      },
+      {
+        "name": "source_table",
+        "label": "Source Table",
+        "type": "text",
+        "required": true,
+        "placeholder": "SRC_ORDERS",
+        "help": "Source table or system name"
+      },
+      {
+        "name": "load_date_column",
+        "label": "Load Date Column",
+        "type": "text",
+        "required": false,
+        "placeholder": "LOAD_DATETIME",
+        "help": "Column name for load date tracking"
+      },
+      {
+        "name": "record_source",
+        "label": "Record Source",
+        "type": "text",
+        "required": false,
+        "placeholder": "ORDER_SYSTEM",
+        "help": "Source system identifier"
+      }
+    ],
+    "template": "-- Data Vault 2.0 Link: {{table_name}}\n-- Generated on {{current_date}}\n\nCREATE TABLE {{table_name}} (\n    {{link_hashkey}} BINARY(16) NOT NULL,\n{{#hub_hashkeys}}\n    {{.}} BINARY(16) NOT NULL,\n{{/hub_hashkeys}}\n    {{load_date_column}} DATETIME NOT NULL,\n    RECORD_SOURCE VARCHAR(255) NOT NULL,\n    \n    PRIMARY KEY ({{link_hashkey}})\n);\n\n-- Insert statement\nINSERT INTO {{table_name}} (\n    {{link_hashkey}},\n{{#hub_hashkeys}}\n    {{.}},\n{{/hub_hashkeys}}\n    {{load_date_column}},\n    RECORD_SOURCE\n)\nSELECT \n    MD5(CONCAT(\n{{#hub_hashkeys}}\n        COALESCE({{.}}, ''),\n{{/hub_hashkeys}}\n        ''\n    )) AS {{link_hashkey}},\n{{#hub_hashkeys}}\n    hub{{@index}}.{{.}},\n{{/hub_hashkeys}}\n    CURRENT_TIMESTAMP AS {{load_date_column}},\n    '{{record_source}}' AS RECORD_SOURCE\nFROM {{source_table}} src\n-- Add appropriate JOINs to Hub tables here\nWHERE NOT EXISTS (\n    SELECT 1 FROM {{table_name}} lnk\n    WHERE lnk.{{link_hashkey}} = MD5(CONCAT(\n{{#hub_hashkeys}}\n        COALESCE(hub{{@index}}.{{.}}, ''),\n{{/hub_hashkeys}}\n        ''\n    ))\n);"
+  },
+  "pit": {
+    "name": "Point-in-Time (PIT)",
+    "description": "A PIT table provides a snapshot view of data at specific points in time.",
+    "fields": [
+      {
+        "name": "table_name",
+        "label": "Table Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "PIT_CUSTOMER",
+        "help": "Name of the PIT table"
+      },
+      {
+        "name": "hub_hashkey",
+        "label": "Hub Hash Key",
+        "type": "text",
+        "required": true,
+        "placeholder": "HUB_CUSTOMER_HASHKEY",
+        "help": "Hash key from the Hub table"
+      },
+      {
+        "name": "satellite_tables",
+        "label": "Satellite Tables",
+        "type": "multi-text",
+        "required": true,
+        "placeholder": "SAT_CUSTOMER_DETAILS",
+        "help": "Satellite tables to include in the PIT"
+      },
+      {
+        "name": "snapshot_date",
+        "label": "Snapshot Date Column",
+        "type": "text",
+        "required": false,
+        "placeholder": "SNAPSHOT_DATE",
+        "help": "Column name for snapshot date"
+      }
+    ],
+    "template": "-- Data Vault 2.0 Point-in-Time: {{table_name}}\n-- Generated on {{current_date}}\n\nCREATE TABLE {{table_name}} (\n    {{hub_hashkey}} BINARY(16) NOT NULL,\n    {{snapshot_date}} DATE NOT NULL,\n{{#satellite_tables}}\n    {{.}}_LOAD_DATETIME DATETIME,\n{{/satellite_tables}}\n    \n    PRIMARY KEY ({{hub_hashkey}}, {{snapshot_date}})\n);\n\n-- Insert statement for PIT table\nINSERT INTO {{table_name}} (\n    {{hub_hashkey}},\n    {{snapshot_date}},\n{{#satellite_tables}}\n    {{.}}_LOAD_DATETIME,\n{{/satellite_tables}}\n)\nSELECT \n    hub.{{hub_hashkey}},\n    cal.{{snapshot_date}},\n{{#satellite_tables}}\n    (\n        SELECT MAX(sat{{@index}}.LOAD_DATETIME)\n        FROM {{.}} sat{{@index}}\n        WHERE sat{{@index}}.{{hub_hashkey}} = hub.{{hub_hashkey}}\n          AND sat{{@index}}.LOAD_DATETIME <= cal.{{snapshot_date}}\n          AND (sat{{@index}}.LOAD_END_DATETIME IS NULL OR sat{{@index}}.LOAD_END_DATETIME > cal.{{snapshot_date}})\n    ) AS {{.}}_LOAD_DATETIME,\n{{/satellite_tables}}\nFROM HUB_TABLE hub\nCROSS JOIN CALENDAR_TABLE cal\nWHERE cal.{{snapshot_date}} >= hub.LOAD_DATETIME;"
+  },
+  "stage_view": {
+    "name": "Stage View",
+    "description": "A staging view that calculates hash keys, hash diffs, and Data Vault specific columns with ghost records.",
+    "fields": [
+      {
+        "name": "view_name",
+        "label": "View Name",
+        "type": "text",
+        "required": true,
+        "placeholder": "stg_customer",
+        "help": "Name of the staging view"
+      },
+      {
+        "name": "schema_name",
+        "label": "Schema Name",
+        "type": "text",
+        "required": false,
+        "placeholder": "user_spaces.user_obause",
+        "help": "Schema where the view will be created"
+      },
+      {
+        "name": "source_table",
+        "label": "Source Table",
+        "type": "text",
+        "required": true,
+        "placeholder": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.Customer",
+        "help": "Full path to the source table"
+      },
+      {
+        "name": "source_columns",
+        "label": "Source Columns",
+        "type": "multi-text",
+        "required": true,
+        "placeholder": "C_CUSTKEY",
+        "help": "All columns to select from the source table"
+      },
+      {
+        "name": "hashkeys",
+        "label": "Hash Keys Configuration",
+        "type": "hashkey-config",
+        "required": true,
+        "placeholder": "",
+        "help": "Define hash keys with their business key columns"
+      },
+      {
+        "name": "hashdiffs",
+        "label": "Hash Diffs Configuration", 
+        "type": "hashdiff-config",
+        "required": false,
+        "placeholder": "",
+        "help": "Define hash diffs for satellite tracking"
+      },
+      {
+        "name": "use_current_timestamp",
+        "label": "Use Current Timestamp for Load Date",
+        "type": "checkbox",
+        "required": false,
+        "help": "Check to use SYSDATE(), uncheck to specify existing column"
+      },
+      {
+        "name": "load_date_column",
+        "label": "Load Date Column",
+        "type": "text", 
+        "required": false,
+        "placeholder": "LOAD_DATETIME",
+        "help": "Existing column name for load date (if not using current timestamp)"
+      },
+      {
+        "name": "use_static_record_source",
+        "label": "Use Static Record Source",
+        "type": "checkbox",
+        "required": false,
+        "help": "Check to use static text, uncheck to specify existing column"
+      },
+      {
+        "name": "record_source_value",
+        "label": "Record Source Value",
+        "type": "text",
+        "required": false,
+        "placeholder": "TPC_H_SF1.Customer",
+        "help": "Static text or existing column name for record source"
+      }
+    ],
+    "template": "file:stage_view.sql"
+  }
+} 
