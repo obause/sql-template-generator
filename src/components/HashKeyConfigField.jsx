@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
 
-const HashKeyConfigField = ({ value, onChange, error }) => {
+const HashKeyConfigField = ({ value, onChange, error, sourceColumnOptions = [] }) => {
   // Value should be an array of {name: string, business_keys: string[], single_key: boolean}
   const hashKeys = Array.isArray(value) ? value : [{ name: '', business_keys: [''], single_key: true }];
 
@@ -56,27 +56,27 @@ const HashKeyConfigField = ({ value, onChange, error }) => {
   return (
     <div className="space-y-4">
       {hashKeys.map((hashKey, hashIndex) => (
-        <div key={hashIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+        <div key={hashIndex} className="rounded-md border p-4 bg-white">
           <div className="flex justify-between items-center mb-3">
-            <h4 className="font-medium text-gray-700">Hash Key {hashIndex + 1}</h4>
+            <h4 className="font-medium text-gray-800">Hash Key {hashIndex + 1}</h4>
             {hashKeys.length > 1 && (
               <button
                 type="button"
-                className="remove-button"
+                className="inline-flex items-center justify-center rounded-md bg-red-600 text-white px-2 py-1 text-xs hover:bg-red-500"
                 onClick={() => removeHashKey(hashIndex)}
                 title="Remove hash key"
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             )}
           </div>
           
           <div className="space-y-3">
             <div>
-              <label className="form-label text-sm">Hash Key Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hash Key Name</label>
               <input
                 type="text"
-                className="form-input"
+                className="w-full rounded-md border px-3 py-2 text-sm"
                 value={hashKey.name || ''}
                 onChange={(e) => updateHashKey(hashIndex, 'name', e.target.value)}
                 placeholder="hk_customer_h"
@@ -84,31 +84,49 @@ const HashKeyConfigField = ({ value, onChange, error }) => {
             </div>
             
             <div>
-              <label className="form-label text-sm">Business Key Columns</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Business Key Columns</label>
               {hashKey.business_keys.map((businessKey, keyIndex) => (
-                <div key={keyIndex} className="multi-input">
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={businessKey || ''}
-                    onChange={(e) => updateBusinessKey(hashIndex, keyIndex, e.target.value)}
-                    placeholder="C_CUSTKEY"
-                  />
+                <div key={keyIndex} className="flex items-center gap-2 mb-2">
+                  <div className="flex w-full gap-2">
+                    <input
+                      type="text"
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      value={businessKey || ''}
+                      onChange={(e) => updateBusinessKey(hashIndex, keyIndex, e.target.value)}
+                      placeholder="C_CUSTKEY"
+                      list={`hk-bk-${hashIndex}-${keyIndex}`}
+                    />
+                    <select
+                      className="rounded-md border px-3 py-2 text-sm"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) updateBusinessKey(hashIndex, keyIndex, e.target.value);
+                      }}
+                    >
+                      <option value="">Pick column…</option>
+                      {sourceColumnOptions.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                    <datalist id={`hk-bk-${hashIndex}-${keyIndex}`}>
+                      {sourceColumnOptions.map(col => (<option key={col} value={col} />))}
+                    </datalist>
+                  </div>
                   {hashKey.business_keys.length > 1 && (
                     <button
                       type="button"
-                      className="remove-button"
+                      className="inline-flex items-center justify-center rounded-md bg-red-600 text-white px-2 py-2 text-xs hover:bg-red-500"
                       onClick={() => removeBusinessKey(hashIndex, keyIndex)}
                       title="Remove business key"
                     >
-                      <X size={16} />
+                      <X size={14} />
                     </button>
                   )}
                 </div>
               ))}
               <button
                 type="button"
-                className="add-button mt-2"
+                className="inline-flex items-center gap-2 rounded-md bg-blue-600 text-white px-3 py-2 text-sm hover:bg-blue-500 mt-2"
                 onClick={() => addBusinessKey(hashIndex)}
               >
                 <Plus size={16} />
@@ -126,7 +144,7 @@ const HashKeyConfigField = ({ value, onChange, error }) => {
       
       <button
         type="button"
-        className="add-button"
+        className="inline-flex items-center gap-2 rounded-md bg-blue-600 text-white px-3 py-2 text-sm hover:bg-blue-500"
         onClick={addHashKey}
       >
         <Plus size={16} />
